@@ -1,18 +1,52 @@
-import Webcam from "react-webcam";
-import { useRef, useState, useEffect, useLayoutEffect } from "react";
+import React, { useRef, useState, useEffect } from "react";
+import Webcam, { WebcamProps } from "react-webcam";
 import { runModelUtils } from "../utils";
 import { Tensor } from "onnxruntime-web";
 
-const WebcamComponent = (props: any) => {
+interface ChecklistProps {
+  itemName: string;
+}
+
+interface WebcamComponentProps {
+  preprocess: (ctx: CanvasRenderingContext2D) => any;
+  session: any; // Update with the correct type for session
+  postprocess: (outputTensor: Tensor, inferenceTime: number, ctx: CanvasRenderingContext2D) => string | null;
+  inferenceTime: number;
+  changeModelResolution: () => void;
+  modelName: string;
+  checklistItems: string[];
+}
+
+const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
   const [inferenceTime, setInferenceTime] = useState<number>(0);
   const [totalTime, setTotalTime] = useState<number>(0);
+  const [detectedItems, setDetectedItems] = useState<string[]>([]);
   const webcamRef = useRef<Webcam>(null);
   const videoCanvasRef = useRef<HTMLCanvasElement>(null);
   const liveDetection = useRef<boolean>(false);
-
   const [facingMode, setFacingMode] = useState<string>("environment");
-  const originalSize = useRef<number[]>([0, 0]);
+  const originalSize = useRef<[number, number]>([0, 0]);
 
+  const updateChecklist = (itemName: string) => {
+    setDetectedItems((prevItems) => [...prevItems, itemName]);
+  };
+
+  const runModel = async (ctx: CanvasRenderingContext2D) => {
+    const data = props.preprocess(ctx);
+    let outputTensor: Tensor;
+    let inferenceTime: number;
+    [outputTensor, inferenceTime] = await runModelUtils.runModel(
+      props.session,
+      data
+    );
+
+    const detectedItem = props.postprocess(outputTensor, props.inferenceTime, ctx);
+    if (detectedItem) {
+      updateChecklist(detectedItem);
+    }
+
+    setInferenceTime(inferenceTime);
+  };
   const capture = () => {
     const canvas = videoCanvasRef.current!;
     const context = canvas.getContext("2d", {
@@ -36,20 +70,6 @@ const WebcamComponent = (props: any) => {
     }
     return context;
   };
-
-  const runModel = async (ctx: CanvasRenderingContext2D) => {
-    const data = props.preprocess(ctx);
-    let outputTensor: Tensor;
-    let inferenceTime: number;
-    [outputTensor, inferenceTime] = await runModelUtils.runModel(
-      props.session,
-      data
-    );
-
-    props.postprocess(outputTensor, props.inferenceTime, ctx);
-    setInferenceTime(inferenceTime);
-  };
-
   const runLiveDetection = async () => {
     if (liveDetection.current) {
       liveDetection.current = false;
@@ -89,9 +109,13 @@ const WebcamComponent = (props: any) => {
     var context = videoCanvasRef.current!.getContext("2d")!;
     context.clearRect(0, 0, originalSize.current[0], originalSize.current[1]);
     liveDetection.current = false;
+    setDetectedItems([]);
+    setInferenceTime(0);
+    setTotalTime(0);
+    
   };
 
-  const [SSR, setSSR] = useState<Boolean>(true);
+  const [SSR, setSSR] = useState<boolean>(true);
 
   const setWebcamCanvasOverlaySize = () => {
     const element = webcamRef.current!.video!;
@@ -122,7 +146,7 @@ const WebcamComponent = (props: any) => {
   }
 
   return (
-    <div className="flex flex-row flex-wrap  justify-evenly align-center w-full">
+    <div className="flex flex-row flex-wrap justify-evenly align-center w-full">
       <div
         id="webcam-container"
         className="flex items-center justify-center webcam-container"
@@ -135,15 +159,13 @@ const WebcamComponent = (props: any) => {
           imageSmoothing={true}
           videoConstraints={{
             facingMode: facingMode,
-            // width: props.width,
-            // height: props.height,
           }}
           onLoadedMetadata={() => {
             setWebcamCanvasOverlaySize();
             originalSize.current = [
               webcamRef.current!.video!.offsetWidth,
               webcamRef.current!.video!.offsetHeight,
-            ] as number[];
+            ] as [number, number];
           }}
           forceScreenshotSourceSize={true}
         />
@@ -178,7 +200,6 @@ const WebcamComponent = (props: any) => {
                   runLiveDetection();
                 }
               }}
-              //on hover, shift the button up
               className={`
               p-2  border-dashed border-2 rounded-xl hover:translate-y-1 
               ${liveDetection.current ? "bg-white text-black" : ""}
@@ -236,6 +257,17 @@ const WebcamComponent = (props: any) => {
             </div>
           </div>
         </div>
+      </div>
+      {/* Checklist */}
+      <div className="flex flex-col justify-center items-center">
+        <h2>Checklist</h2>
+        <ul>
+          {Array.isArray(props.checklistItems) && props.checklistItems.map((item, index) => (
+            <li key={index} style={{ textDecoration: detectedItems.includes(item) ? "line-through" : "none" }}>
+              {item}
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );
