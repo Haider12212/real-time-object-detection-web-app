@@ -4,9 +4,10 @@ import ops from "ndarray-ops";
 import ObjectDetectionCamera from "../ObjectDetectionCamera";
 import { round } from "lodash";
 import { yoloClasses } from "../../data/yolo_classes";
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { useEffect } from "react";
 import { runModelUtils } from "../../utils";
+import { CheckListContext } from "../../utils/CheckListContext";
 
 const RES_TO_MODEL: [number[], string][] = [
   [[256,256], "yolov7-tiny_256x256.onnx"],
@@ -20,8 +21,7 @@ const Yolo = (props: any) => {
   );
   const [modelName, setModelName] = useState<string>(RES_TO_MODEL[0][1]);
   const [session, setSession] = useState<any>(null);
-  const [checklistItems, setChecklistItems] = useState<string[]>([]);
-  const [newItem, setNewItem] = useState<string>("");
+  const { checkList, setCheckList, checkListLength, setCheckListLength } = useContext(CheckListContext);
 
   useEffect(() => {
     const getSession = async () => {
@@ -32,9 +32,7 @@ const Yolo = (props: any) => {
     };
     getSession();
   }, [modelName]);
-  const updateChecklist = (itemName: string) => {
-    setChecklistItems((prevItems) => [...prevItems, itemName]);
-  };
+  
 
   const changeModelResolution = () => {
     const index = RES_TO_MODEL.findIndex((item) => item[0] === modelResolution);
@@ -47,16 +45,7 @@ const Yolo = (props: any) => {
     }
   };
 
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setNewItem(event.target.value);
-  };
-
-  const handleAddItem = () => {
-    if (newItem.trim() !== "") {
-      updateChecklist(newItem.trim());
-      setNewItem("");
-    }
-  };
+ 
   const resizeCanvasCtx = (
     ctx: CanvasRenderingContext2D,
     targetWidth: number,
@@ -199,7 +188,6 @@ const Yolo = (props: any) => {
       ctx.fillStyle = color.replace(")", ", 0.2)").replace("rgb", "rgba");
       ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
     }
-    updateChecklist("Detected Item");
   };
 
   return (
@@ -208,28 +196,18 @@ const Yolo = (props: any) => {
       width={props.width}
       height={props.height}
       preprocess={preprocess}
-      postprocess={postprocess}
+      postprocess={(tensor, inferenceTime, ctx) => {
+        postprocess(tensor, inferenceTime, ctx);
+        return null;
+      }}
       resizeCanvasCtx={resizeCanvasCtx}
       session={session}
       changeModelResolution={changeModelResolution}
       modelName={modelName}
-      checklistItems={checklistItems}
+      modelResolution={modelResolution}
+      checklistItems={checkList}
     />
-    <div className="flex items-center">
-  <input
-    type="text"
-    value={newItem}
-    onChange={handleChange}
-    placeholder="Add checklist item"
-    className="mr-2 px-3 py-2 border rounded-lg border-gray-300 focus:outline-none focus:border-blue-500"
-  />
-  <button
-    onClick={handleAddItem}
-    className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-  >
-    Add Item
-  </button>
-</div>
+    
 
     </div>
     

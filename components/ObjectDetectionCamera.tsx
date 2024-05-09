@@ -1,11 +1,9 @@
 import React, { useRef, useState, useEffect } from "react";
+import {useContext } from "react";
 import Webcam, { WebcamProps } from "react-webcam";
 import { runModelUtils } from "../utils";
 import { Tensor } from "onnxruntime-web";
-
-interface ChecklistProps {
-  itemName: string;
-}
+import { CheckListContext } from "../utils/CheckListContext";
 
 interface WebcamComponentProps {
   preprocess: (ctx: CanvasRenderingContext2D) => any;
@@ -26,10 +24,23 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
   const liveDetection = useRef<boolean>(false);
   const [facingMode, setFacingMode] = useState<string>("environment");
   const originalSize = useRef<[number, number]>([0, 0]);
+  const [newItem, setNewItem] = useState<string>("");
+  const {checkList, setCheckList, checkListLength, setCheckListLength} = useContext(CheckListContext);
 
-  const updateChecklist = (itemName: string) => {
-    setDetectedItems((prevItems) => [...prevItems, itemName]);
+
+  const updateChecklist = (newItem: string) => {
+    if (!checkList.includes(newItem)) {
+      setCheckList([...checkList, newItem]);
+      setCheckListLength(checkListLength + 1);
+    }
   };
+
+  
+
+  useEffect(() => {
+    console.log("Current Checklist Items:", checkList);
+  }, [checkList]);
+  
 
   const runModel = async (ctx: CanvasRenderingContext2D) => {
     const data = props.preprocess(ctx);
@@ -47,6 +58,18 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
 
     setInferenceTime(inferenceTime);
   };
+  
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewItem(e.target.value);
+  };
+
+  const handleAddItem = () => {
+    if (newItem) {
+      updateChecklist(newItem);
+      setNewItem("");
+    }
+  };
+  
   const capture = () => {
     const canvas = videoCanvasRef.current!;
     const context = canvas.getContext("2d", {
@@ -112,7 +135,7 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
     setDetectedItems([]);
     setInferenceTime(0);
     setTotalTime(0);
-    
+
   };
 
   const [SSR, setSSR] = useState<boolean>(true);
@@ -168,6 +191,7 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
             ] as [number, number];
           }}
           forceScreenshotSourceSize={true}
+          
         />
         <canvas
           id="cv1"
@@ -257,18 +281,41 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
             </div>
           </div>
         </div>
+        <div className="flex flex-col justify-center items-center">
+          <h2>Checklist</h2>
+          <ul>
+  {Array.isArray(props.checklistItems) &&
+    props.checklistItems.map((item, index) => (
+      <li
+        key={index}
+        style={{
+          textDecoration: detectedItems.includes(item) ? "line-through" : "none",
+        }}
+      >
+        {item}
+      </li>
+    ))}
+</ul>
+
+
+        </div>
+        <div className="flex items-center">
+          <input
+            type="text"
+            value={newItem}
+            onChange={handleChange}
+            placeholder="Add checklist item"
+            className="mr-2 px-3 py-2 border rounded-lg text-neutral-700 border-gray-300 focus:outline-none focus:border-blue-500"
+          />
+          <button
+            onClick={handleAddItem}
+            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+          >
+            Add Item
+          </button>
+        </div>
       </div>
-      {/* Checklist */}
-      <div className="flex flex-col justify-center items-center">
-        <h2>Checklist</h2>
-        <ul>
-          {Array.isArray(props.checklistItems) && props.checklistItems.map((item, index) => (
-            <li key={index} style={{ textDecoration: detectedItems.includes(item) ? "line-through" : "none" }}>
-              {item}
-            </li>
-          ))}
-        </ul>
-      </div>
+
     </div>
   );
 };
