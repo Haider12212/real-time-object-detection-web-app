@@ -3,6 +3,7 @@ import {useContext } from "react";
 import Webcam, { WebcamProps } from "react-webcam";
 import { runModelUtils } from "../utils";
 import { Tensor } from "onnxruntime-web";
+import { yoloClasses } from "../data/yolo_classes";
 import { CheckListContext } from "../utils/CheckListContext";
 
 interface WebcamComponentProps {
@@ -64,11 +65,14 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
   };
 
   const handleAddItem = () => {
-    if (newItem) {
+    if (newItem && yoloClasses.includes(newItem)) {
       updateChecklist(newItem);
       setNewItem("");
+    } else {
+      alert("This object is not allowed.");
     }
   };
+  
   
   const capture = () => {
     const canvas = videoCanvasRef.current!;
