@@ -51,11 +51,21 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
       props.session,
       data
     );
+    const item = props.postprocess(outputTensor, inferenceTime, ctx); 
+    
+      const detectedItems: string[] = [];
+      for (let i = 0; i < outputTensor.dims[0]; i++) {
+        const [_, __, ___, ____, _____, cls_id, score] = outputTensor.data.slice(
+          i * 7,
+          i * 7 + 7
+        );
+        const className = yoloClasses[Number(cls_id)]; // Convert cls_id to a number
+        const confidence = Number(score) * 100; // Convert score to a number
+        detectedItems.push(`${className}`);
+      }
 
-    const detectedItem = props.postprocess(outputTensor, props.inferenceTime, ctx);
-    if (detectedItem) {
-      updateChecklist(detectedItem);
-    }
+      console.log("Detected Items:", detectedItems);
+      setDetectedItems(detectedItems);
 
     setInferenceTime(inferenceTime);
   };
@@ -63,15 +73,19 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNewItem(e.target.value);
   };
-
   const handleAddItem = () => {
     if (newItem && yoloClasses.includes(newItem)) {
-      updateChecklist(newItem);
-      setNewItem("");
+      if (!checkList.includes(newItem)) { // Check if newItem is not already in the checklist
+        updateChecklist(newItem);
+        setNewItem("");
+      } else {
+        alert("This object is already in the checklist.");
+      }
     } else {
       alert("This object is not allowed.");
     }
   };
+  
   
   
   const capture = () => {
@@ -291,13 +305,15 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
   {Array.isArray(props.checklistItems) &&
     props.checklistItems.map((item, index) => (
       <li
-        key={index}
-        style={{
-          textDecoration: detectedItems.includes(item) ? "line-through" : "none",
-        }}
-      >
-        {item}
-      </li>
+  key={index}
+  style={{
+    textDecoration: detectedItems.includes(item) ? "line-through" : "none",
+    color: detectedItems.includes(item) ? "red" : "inherit",
+  }}
+>
+  {item}
+</li>
+
     ))}
 </ul>
 
@@ -309,7 +325,7 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
             value={newItem}
             onChange={handleChange}
             placeholder="Add checklist item"
-            className="mr-2 px-3 py-2 border rounded-lg text-neutral-700 border-gray-300 focus:outline-none focus:border-blue-500"
+            className="mr-2 px-3 py-2 border rounded-lg text-neutral-200 border-gray-300 focus:outline-none focus:border-blue-500"
           />
           <button
             onClick={handleAddItem}
