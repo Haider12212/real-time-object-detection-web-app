@@ -7,6 +7,8 @@ import { yoloClasses } from "../data/yolo_classes";
 import { CheckListContext } from "../utils/CheckListContext";
 
 interface WebcamComponentProps {
+  width: number;
+  height: number;
   preprocess: (ctx: CanvasRenderingContext2D) => any;
   session: any; // Update with the correct type for session
   postprocess: (outputTensor: Tensor, inferenceTime: number, ctx: CanvasRenderingContext2D) => string | null;
@@ -17,6 +19,7 @@ interface WebcamComponentProps {
 }
 
 const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
+
   const [inferenceTime, setInferenceTime] = useState<number>(0);
   const [totalTime, setTotalTime] = useState<number>(0);
   const [detectedItems, setDetectedItems] = useState<string[]>([]);
