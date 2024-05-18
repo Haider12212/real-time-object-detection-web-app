@@ -77,9 +77,10 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
     setNewItem(e.target.value);
   };
   const handleAddItem = () => {
-    if (newItem && yoloClasses.includes(newItem)) {
-      if (!checkList.includes(newItem)) { // Check if newItem is not already in the checklist
-        updateChecklist(newItem);
+    var item = newItem.toLowerCase();
+    if (item && yoloClasses.includes(item)) {
+      if (!checkList.includes(item)) { // Check if newItem is not already in the checklist
+        updateChecklist(item);
         setNewItem("");
       } else {
         alert("This object is already in the checklist.");
@@ -120,20 +121,33 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
       return;
     }
     liveDetection.current = true;
+  
     while (liveDetection.current) {
       const startTime = Date.now();
       const ctx = capture();
-      if (!ctx) return;
-      await runModel(ctx);
+  
+      if (!ctx) {
+        console.error("Failed to capture context");
+        liveDetection.current = false;
+        return;
+      }
+  
+      try {
+        await runModel(ctx);
+      } catch (error) {
+        console.error("Error in runModel:", error);
+        liveDetection.current = false;
+        return;
+      }
+  
       setTotalTime(Date.now() - startTime);
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => resolve())
-      );
+  
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     }
   };
+  
 
   const processImage = async () => {
-    reset();
     const ctx = capture();
     if (!ctx) return;
 
@@ -156,6 +170,7 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
     setDetectedItems([]);
     setInferenceTime(0);
     setTotalTime(0);
+    setCheckList([]);
 
   };
 
