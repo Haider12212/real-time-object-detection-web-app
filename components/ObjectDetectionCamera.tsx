@@ -1,12 +1,14 @@
 import React, { useRef, useState, useEffect } from "react";
-import {useContext } from "react";
-import Webcam, { WebcamProps } from "react-webcam";
+import { useContext } from "react";
+import Webcam from "react-webcam";
 import { runModelUtils } from "../utils";
 import { Tensor } from "onnxruntime-web";
 import { yoloClasses } from "../data/yolo_classes";
 import { CheckListContext } from "../utils/CheckListContext";
 
 interface WebcamComponentProps {
+  width: number;
+  height: number;
   preprocess: (ctx: CanvasRenderingContext2D) => any;
   session: any; // Update with the correct type for session
   postprocess: (outputTensor: Tensor, inferenceTime: number, ctx: CanvasRenderingContext2D) => string | null;
@@ -20,14 +22,15 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
   const [inferenceTime, setInferenceTime] = useState<number>(0);
   const [totalTime, setTotalTime] = useState<number>(0);
   const [detectedItems, setDetectedItems] = useState<string[]>([]);
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [newItem, setNewItem] = useState<string>("");
   const webcamRef = useRef<Webcam>(null);
   const videoCanvasRef = useRef<HTMLCanvasElement>(null);
+  const imageCanvasRef = useRef<HTMLCanvasElement>(null);
   const liveDetection = useRef<boolean>(false);
   const [facingMode, setFacingMode] = useState<string>("environment");
   const originalSize = useRef<[number, number]>([0, 0]);
-  const [newItem, setNewItem] = useState<string>("");
-  const {checkList, setCheckList, checkListLength, setCheckListLength} = useContext(CheckListContext);
-
+  const { checkList, setCheckList, checkListLength, setCheckListLength } = useContext(CheckListContext);
 
   const updateChecklist = (newItem: string) => {
     if (!checkList.includes(newItem)) {
@@ -36,12 +39,9 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
     }
   };
 
-  
-
   useEffect(() => {
     console.log("Current Checklist Items:", checkList);
   }, [checkList]);
-  
 
   const runModel = async (ctx: CanvasRenderingContext2D) => {
     const data = props.preprocess(ctx);
@@ -52,28 +52,48 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
       data
     );
 
-    const detectedItem = props.postprocess(outputTensor, props.inferenceTime, ctx);
-    if (detectedItem) {
-      updateChecklist(detectedItem);
+    const detectedItems: string[] = [];
+    for (let i = 0; i < outputTensor.dims[0]; i++) {
+      const [_, __, ___, ____, _____, cls_id, score] = outputTensor.data.slice(
+        i * 7,
+        i * 7 + 7
+      );
+      const className = yoloClasses[Number(cls_id)];
+      const confidence = Number(score) * 100;
+      detectedItems.push(`${className}`);
     }
+
+    console.log("Detected Items:", detectedItems);
+    setDetectedItems(detectedItems);
+
+    // Alert the user if a checklist item is detected
+    detectedItems.forEach((item) => {
+      if (checkList.includes(item)) {
+        window.alert(`Detected a checklist item: ${item}`);
+      }
+    });
 
     setInferenceTime(inferenceTime);
   };
-  
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNewItem(e.target.value);
   };
 
   const handleAddItem = () => {
-    if (newItem && yoloClasses.includes(newItem)) {
-      updateChecklist(newItem);
-      setNewItem("");
+    var item = newItem.toLowerCase();
+    if (item && yoloClasses.includes(item)) {
+      if (!checkList.includes(item)) {
+        updateChecklist(item);
+        setNewItem("");
+      } else {
+        alert("This object is already in the checklist.");
+      }
     } else {
       alert("This object is not allowed.");
     }
   };
-  
-  
+
   const capture = () => {
     const canvas = videoCanvasRef.current!;
     const context = canvas.getContext("2d", {
@@ -97,30 +117,42 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
     }
     return context;
   };
+
   const runLiveDetection = async () => {
     if (liveDetection.current) {
       liveDetection.current = false;
       return;
     }
     liveDetection.current = true;
+
     while (liveDetection.current) {
       const startTime = Date.now();
       const ctx = capture();
-      if (!ctx) return;
-      await runModel(ctx);
+
+      if (!ctx) {
+        console.error("Failed to capture context");
+        liveDetection.current = false;
+        return;
+      }
+
+      try {
+        await runModel(ctx);
+      } catch (error) {
+        console.error("Error in runModel:", error);
+        liveDetection.current = false;
+        return;
+      }
+
       setTotalTime(Date.now() - startTime);
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => resolve())
-      );
+
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     }
   };
 
   const processImage = async () => {
-    reset();
     const ctx = capture();
     if (!ctx) return;
 
-    // create a copy of the canvas
     const boxCtx = document
       .createElement("canvas")
       .getContext("2d") as CanvasRenderingContext2D;
@@ -139,7 +171,33 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
     setDetectedItems([]);
     setInferenceTime(0);
     setTotalTime(0);
+    setCheckList([]);
+    setUploadedImage(null);
+  };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setUploadedImage(event.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const processUploadedImage = async () => {
+    if (!uploadedImage) return;
+    const img = new Image();
+    img.src = uploadedImage;
+    img.onload = async () => {
+      const canvas = imageCanvasRef.current!;
+      const ctx = canvas.getContext("2d")!;
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+      await runModel(ctx);
+    };
   };
 
   const [SSR, setSSR] = useState<boolean>(true);
@@ -155,13 +213,11 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
     cv.height = h;
   };
 
-  // close camera when browser tab is minimized
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
         liveDetection.current = false;
       }
-      // set SSR to true to prevent webcam from loading when tab is not active
       setSSR(document.hidden);
     };
     setSSR(document.hidden);
@@ -174,19 +230,14 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
 
   return (
     <div className="flex flex-row flex-wrap justify-evenly align-center w-full">
-      <div
-        id="webcam-container"
-        className="flex items-center justify-center webcam-container"
-      >
+      <div id="webcam-container" className="flex items-center justify-center webcam-container">
         <Webcam
           mirrored={facingMode === "user"}
           audio={false}
           ref={webcamRef}
           screenshotFormat="image/jpeg"
           imageSmoothing={true}
-          videoConstraints={{
-            facingMode: facingMode,
-          }}
+          videoConstraints={{ facingMode: facingMode }}
           onLoadedMetadata={() => {
             setWebcamCanvasOverlaySize();
             originalSize.current = [
@@ -195,16 +246,11 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
             ] as [number, number];
           }}
           forceScreenshotSourceSize={true}
-          
         />
         <canvas
           id="cv1"
           ref={videoCanvasRef}
-          style={{
-            position: "absolute",
-            zIndex: 10,
-            backgroundColor: "rgba(0,0,0,0)",
-          }}
+          style={{ position: "absolute", zIndex: 10, backgroundColor: "rgba(0,0,0,0)" }}
         ></canvas>
       </div>
       <div className="flex flex-col justify-center items-center">
@@ -228,11 +274,9 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
                   runLiveDetection();
                 }
               }}
-              className={`
-              p-2  border-dashed border-2 rounded-xl hover:translate-y-1 
-              ${liveDetection.current ? "bg-white text-black" : ""}
-              
-              `}
+              className={`p-2 border-dashed border-2 rounded-xl hover:translate-y-1 ${
+                liveDetection.current ? "bg-white text-black" : ""
+              }`}
             >
               Live Detection
             </button>
@@ -243,7 +287,7 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
                 reset();
                 setFacingMode(facingMode === "user" ? "environment" : "user");
               }}
-              className="p-2  border-dashed border-2 rounded-xl hover:translate-y-1 "
+              className="p-2 border-dashed border-2 rounded-xl hover:translate-y-1 "
             >
               Switch Camera
             </button>
@@ -252,13 +296,13 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
                 reset();
                 props.changeModelResolution();
               }}
-              className="p-2  border-dashed border-2 rounded-xl hover:translate-y-1 "
+              className="p-2 border-dashed border-2 rounded-xl hover:translate-y-1 "
             >
               Change Model
             </button>
             <button
               onClick={reset}
-              className="p-2  border-dashed border-2 rounded-xl hover:translate-y-1 "
+              className="p-2 border-dashed border-2 rounded-xl hover:translate-y-1 "
             >
               Reset
             </button>
@@ -274,9 +318,7 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
             {"Overhead Time: +" + (totalTime - inferenceTime).toFixed(2) + "ms"}
           </div>
           <div>
-            <div>
-              {"Model FPS: " + (1000 / inferenceTime).toFixed(2) + "fps"}
-            </div>
+            <div>{"Model FPS: " + (1000 / inferenceTime).toFixed(2) + "fps"}</div>
             <div>{"Total FPS: " + (1000 / totalTime).toFixed(2) + "fps"}</div>
             <div>
               {"Overhead FPS: " +
@@ -288,20 +330,19 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
         <div className="flex flex-col justify-center items-center">
           <h2>Checklist</h2>
           <ul>
-  {Array.isArray(props.checklistItems) &&
-    props.checklistItems.map((item, index) => (
-      <li
-        key={index}
-        style={{
-          textDecoration: detectedItems.includes(item) ? "line-through" : "none",
-        }}
-      >
-        {item}
-      </li>
-    ))}
-</ul>
-
-
+            {Array.isArray(props.checklistItems) &&
+              props.checklistItems.map((item, index) => (
+                <li
+                  key={index}
+                  style={{
+                    textDecoration: detectedItems.includes(item) ? "line-through" : "none",
+                    color: detectedItems.includes(item) ? "red" : "inherit",
+                  }}
+                >
+                  {item}
+                </li>
+              ))}
+          </ul>
         </div>
         <div className="flex items-center">
           <input
@@ -309,7 +350,7 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
             value={newItem}
             onChange={handleChange}
             placeholder="Add checklist item"
-            className="mr-2 px-3 py-2 border rounded-lg text-neutral-700 border-gray-300 focus:outline-none focus:border-blue-500"
+            className="mr-2 px-3 py-2 border rounded-lg text-neutral-200 border-gray-300 focus:outline-none focus:border-blue-500"
           />
           <button
             onClick={handleAddItem}
@@ -318,8 +359,21 @@ const WebcamComponent: React.FC<WebcamComponentProps> = (props) => {
             Add Item
           </button>
         </div>
+        <div className="flex flex-col items-center mt-4">
+          <input type="file" accept="image/*" onChange={handleImageUpload} />
+          {uploadedImage && (
+            <div>
+              <canvas ref={imageCanvasRef} style={{ maxWidth: "100%" }}></canvas>
+              <button
+                onClick={processUploadedImage}
+                className="mt-2 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+              >
+                Process Uploaded Image
+              </button>
+            </div>
+          )}
+        </div>
       </div>
-
     </div>
   );
 };

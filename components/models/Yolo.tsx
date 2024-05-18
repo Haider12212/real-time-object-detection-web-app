@@ -200,11 +200,10 @@ const Yolo = (props: any) => {
         postprocess(tensor, inferenceTime, ctx);
         return null;
       }}
-      resizeCanvasCtx={resizeCanvasCtx}
       session={session}
       changeModelResolution={changeModelResolution}
       modelName={modelName}
-      modelResolution={modelResolution}
+      inferenceTime={props.inferenceTime}
       checklistItems={checkList}
     />
     
